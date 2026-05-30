@@ -3,6 +3,47 @@
 # It does NOT create or manage the Terraform state bucket — that is owned
 # exclusively by the bootstrap module.
 
+
+# ------------------------------------------------------------------------------
+# KMS Customer-Managed Keys
+# ------------------------------------------------------------------------------
+
+resource "aws_kms_key" "static_hosting" {
+  description             = "CMK for ${var.project}-${var.environment} static hosting bucket encryption"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+
+  tags = {
+    Name        = "${var.project}-${var.environment}-static-hosting-key"
+    Project     = var.project
+    Environment = var.environment
+    ManagedBy   = "terraform"
+  }
+}
+
+resource "aws_kms_alias" "static_hosting" {
+  name          = "alias/${var.project}-${var.environment}-static-hosting"
+  target_key_id = aws_kms_key.static_hosting.key_id
+}
+
+resource "aws_kms_key" "app_assets" {
+  description             = "CMK for ${var.project}-${var.environment} app assets bucket encryption"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+
+  tags = {
+    Name        = "${var.project}-${var.environment}-app-assets-key"
+    Project     = var.project
+    Environment = var.environment
+    ManagedBy   = "terraform"
+  }
+}
+
+resource "aws_kms_alias" "app_assets" {
+  name          = "alias/${var.project}-${var.environment}-app-assets"
+  target_key_id = aws_kms_key.app_assets.key_id
+}
+
 # ------------------------------------------------------------------------------
 # S3 Bucket — Static Website Hosting
 # ------------------------------------------------------------------------------
@@ -33,6 +74,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "static_hosting" {
   rule {
     apply_server_side_encryption_by_default {
       sse_algorithm = "aws:kms"
+      kms_key_id    = aws_kms_key.static_hosting.arn
     }
   }
 }
@@ -105,6 +147,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "app_assets" {
   rule {
     apply_server_side_encryption_by_default {
       sse_algorithm = "aws:kms"
+      kms_key_id    = aws_kms_key.app_assets.arn
     }
   }
 }

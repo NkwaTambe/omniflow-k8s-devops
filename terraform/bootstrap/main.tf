@@ -4,6 +4,27 @@
 # Do NOT overlap with the storage module (application-level buckets).
 
 # ------------------------------------------------------------------------------
+# KMS Customer-Managed Key for State Bucket Encryption
+# ------------------------------------------------------------------------------
+
+resource "aws_kms_key" "terraform_state" {
+  description             = "CMK for Terraform state bucket encryption"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+
+  tags = {
+    Project     = "OmniFlow"
+    Environment = "management"
+    ManagedBy   = "terraform"
+  }
+}
+
+resource "aws_kms_alias" "terraform_state" {
+  name          = "alias/omniflow-terraform-state"
+  target_key_id = aws_kms_key.terraform_state.key_id
+}
+
+# ------------------------------------------------------------------------------
 # S3 Bucket for Terraform State
 # ------------------------------------------------------------------------------
 
@@ -31,6 +52,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "terraform_state" 
   rule {
     apply_server_side_encryption_by_default {
       sse_algorithm = "aws:kms"
+      kms_key_id    = aws_kms_key.terraform_state.arn
     }
   }
 }
