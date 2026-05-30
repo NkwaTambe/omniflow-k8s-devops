@@ -1,0 +1,31 @@
+# Staging Environment — Terraform Variables Example
+# Copy this file to terraform.tfvars and fill in real values.
+# terraform.tfvars is gitignored — never commit real secrets.
+
+# General
+region = "us-east-1"
+
+# Networking (2 AZs for staging — production-like topology)
+vpc_cidr             = "10.1.0.0/16"
+public_subnet_cidrs  = ["10.1.1.0/24", "10.1.2.0/24"]
+private_subnet_cidrs = ["10.1.101.0/24", "10.1.102.0/24"]
+availability_zones   = ["us-east-1a", "us-east-1b"]
+
+# Kubernetes (medium cluster for staging)
+kubernetes_version  = "1.29"
+node_instance_type  = "t3.medium"
+node_desired_size   = 2
+node_max_size       = 4
+node_min_size       = 1
+api_allowed_cidrs   = ["10.1.0.0/16"]
+
+# Database (multi-AZ, medium instance)
+db_engine_version           = "16.1"
+db_instance_class           = "db.t3.medium"
+db_allocated_storage        = 50
+db_name                     = "omniflow"
+db_username                 = "omniflow_admin"
+db_password                 = "CHANGE_ME_TO_A_STRONG_PASSWORD"
+db_multi_az                 = true
+db_backup_retention_period  = 7
+db_skip_final_snapshot      = false

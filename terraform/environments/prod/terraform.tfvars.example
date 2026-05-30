@@ -1,0 +1,31 @@
+# Prod Environment — Terraform Variables Example
+# Copy this file to terraform.tfvars and fill in real values.
+# terraform.tfvars is gitignored — never commit real secrets.
+
+# General
+region = "us-east-1"
+
+# Networking (3 AZs for high availability)
+vpc_cidr             = "10.2.0.0/16"
+public_subnet_cidrs  = ["10.2.1.0/24", "10.2.2.0/24", "10.2.3.0/24"]
+private_subnet_cidrs = ["10.2.101.0/24", "10.2.102.0/24", "10.2.103.0/24"]
+availability_zones   = ["us-east-1a", "us-east-1b", "us-east-1c"]
+
+# Kubernetes (large cluster for production)
+kubernetes_version  = "1.29"
+node_instance_type  = "t3.large"
+node_desired_size   = 3
+node_max_size       = 10
+node_min_size       = 2
+api_allowed_cidrs   = ["10.2.0.0/16"]
+
+# Database (multi-AZ, large instance, enhanced monitoring)
+db_engine_version           = "16.1"
+db_instance_class           = "db.r6g.large"
+db_allocated_storage        = 100
+db_name                     = "omniflow"
+db_username                 = "omniflow_admin"
+db_password                 = "CHANGE_ME_TO_A_STRONG_PASSWORD"
+db_multi_az                 = true
+db_backup_retention_period  = 30
+db_skip_final_snapshot      = false

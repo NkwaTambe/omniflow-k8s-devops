@@ -75,3 +75,8 @@ logs/
 *.pem
 *.key
 secrets/
+.codex/
+.pair-shared/
+.codex-home/
+.pair-shared/.codex/
+.claude/

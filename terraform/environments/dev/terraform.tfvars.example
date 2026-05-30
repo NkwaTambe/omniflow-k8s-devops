@@ -1,0 +1,31 @@
+# Dev Environment — Terraform Variables Example
+# Copy this file to terraform.tfvars and fill in real values.
+# terraform.tfvars is gitignored — never commit real secrets.
+
+# General
+region = "us-east-1"
+
+# Networking (single AZ for cost savings in dev)
+vpc_cidr             = "10.0.0.0/16"
+public_subnet_cidrs  = ["10.0.1.0/24"]
+private_subnet_cidrs = ["10.0.101.0/24"]
+availability_zones   = ["us-east-1a"]
+
+# Kubernetes (minimal cluster for dev)
+kubernetes_version  = "1.29"
+node_instance_type  = "t3.small"
+node_desired_size   = 1
+node_max_size       = 2
+node_min_size       = 1
+api_allowed_cidrs   = ["0.0.0.0/0"]
+
+# Database (single AZ, small instance)
+db_engine_version           = "16.1"
+db_instance_class           = "db.t3.small"
+db_allocated_storage        = 20
+db_name                     = "omniflow"
+db_username                 = "omniflow_admin"
+db_password                 = "CHANGE_ME_TO_A_STRONG_PASSWORD"
+db_multi_az                 = false
+db_backup_retention_period  = 1
+db_skip_final_snapshot      = true
