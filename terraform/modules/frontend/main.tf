@@ -47,6 +47,8 @@ resource "kubernetes_service_account" "frontend" {
 }
 
 resource "kubernetes_deployment" "frontend" {
+  wait_for_rollout = var.wait_for_rollout
+
   metadata {
     name      = var.app_name
     namespace = var.namespace

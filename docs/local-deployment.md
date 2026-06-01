@@ -178,10 +178,10 @@ cd terraform/environments/dev
 # Initialize Terraform (downloads K8s + Helm providers)
 terraform init
 
-# Apply — creates namespace, deployment, service, HPA, network policy, ingress
+# Apply — creates all 8 resources. Returns immediately (wait_for_rollout=false for local dev)
 terraform apply -auto-approve -var="kube_context=kind-omniflow"
 
-# Patch for local image (Terraform creates :dev tag by default)
+# Patch for local image (Terraform creates :dev tag, but kind has :local)
 kubectl set image deployment/omniflow-frontend \
   omniflow-frontend=ghcr.io/nkwatambe/omniflow-k8s-devops:local \
   -n omniflow-dev
@@ -189,6 +189,8 @@ kubectl patch deployment omniflow-frontend -n omniflow-dev \
   --type='json' \
   -p='[{"op": "replace", "path": "/spec/template/spec/containers/0/imagePullPolicy", "value": "Never"}]'
 ```
+
+> **Why two steps?** Terraform creates the deployment with `image: :dev` (the registry tag). For local dev, the image is loaded into kind as `:local` with `imagePullPolicy: Never`. In production CI/CD, the image is pushed to ghcr.io as `:dev`/`:sha-xxx`, so no patch is needed — Terraform's image tag matches the registry.
 
 > **If you get "already exists" errors:** Leftover resources from a previous partial deploy. Delete the namespace first: `kubectl delete namespace omniflow-dev --context kind-omniflow`, then re-run `terraform apply`.
 

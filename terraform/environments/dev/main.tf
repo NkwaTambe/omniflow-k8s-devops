@@ -67,6 +67,8 @@ module "frontend" {
 
   topology_spread_enabled = false
 
+  wait_for_rollout = false
+
   labels = {
     Environment = "dev"
     Project     = "omniflow"

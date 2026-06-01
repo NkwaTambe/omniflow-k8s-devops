@@ -116,3 +116,9 @@ variable "network_policy_enabled" {
   type        = bool
   default     = true
 }
+
+variable "wait_for_rollout" {
+  description = "Wait for deployment rollout to complete before Terraform returns. Set false for local dev where image patching is needed."
+  type        = bool
+  default     = true
+}
