@@ -28,12 +28,14 @@ spec:
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 60
+      selectPolicy: Max
       policies:
         - type: Percent
           value: 100
           periodSeconds: 60
     scaleDown:
       stabilizationWindowSeconds: 300
+      selectPolicy: Min
       policies:
         - type: Percent
           value: 10

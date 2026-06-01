@@ -167,9 +167,12 @@ kind load docker-image ghcr.io/nkwatambe/omniflow-k8s-devops:local --name omnifl
 
 ### Recommended: Terraform + Helm Together
 
-This is the **production-like** approach. Terraform provisions all infrastructure and calls Helm for the application:
+This is the **production-like** approach. Terraform provisions all infrastructure and calls Helm for the application.
+
+> **Important:** You MUST be inside the `terraform/environments/dev/` directory. Terraform only reads `.tf` files in the current directory.
 
 ```bash
+# Step into the dev environment directory (not the repo root!)
 cd terraform/environments/dev
 
 # Initialize Terraform (downloads K8s + Helm providers)
@@ -186,6 +189,8 @@ kubectl patch deployment omniflow-frontend -n omniflow-dev \
   --type='json' \
   -p='[{"op": "replace", "path": "/spec/template/spec/containers/0/imagePullPolicy", "value": "Never"}]'
 ```
+
+> **If you get "already exists" errors:** Leftover resources from a previous partial deploy. Delete the namespace first: `kubectl delete namespace omniflow-dev --context kind-omniflow`, then re-run `terraform apply`.
 
 **What Terraform created (8 resources):**
 
