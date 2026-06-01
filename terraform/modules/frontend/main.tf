@@ -111,7 +111,7 @@ resource "kubernetes_deployment" "frontend" {
 
           port {
             name           = "http"
-            container_port = 80
+            container_port = 8080
             protocol       = "TCP"
           }
 
