@@ -1,0 +1,4 @@
+{{- range $path, $_ := .Files.Glob "ci/**" }}
+{{ $path }}: |
+{{ $.Files.Get $path | indent 2 }}
+{{- end }}

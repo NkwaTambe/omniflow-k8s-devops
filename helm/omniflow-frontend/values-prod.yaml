@@ -1,0 +1,30 @@
+replicaCount: 3
+
+image:
+  tag: latest
+
+config:
+  NODE_ENV: production
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+autoscaling:
+  minReplicas: 3
+  maxReplicas: 10
+
+ingress:
+  hosts:
+    - host: omniflow.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: omniflow-prod-tls
+      hosts:
+        - omniflow.example.com

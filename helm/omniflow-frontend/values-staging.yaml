@@ -1,0 +1,30 @@
+replicaCount: 2
+
+image:
+  tag: staging
+
+config:
+  NODE_ENV: staging
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+autoscaling:
+  minReplicas: 2
+  maxReplicas: 5
+
+ingress:
+  hosts:
+    - host: omniflow.staging.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: omniflow-staging-tls
+      hosts:
+        - omniflow.staging.local

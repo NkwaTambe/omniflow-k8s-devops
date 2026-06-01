@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: omniflow-frontend-config
+  namespace: omniflow
+  labels:
+    app.kubernetes.io/name: omniflow-frontend
+    app.kubernetes.io/component: frontend
+data:
+  NODE_ENV: "production"
+  VITE_APP_TITLE: "OmniFlow"
+  NGINX_WORKER_PROCESSES: "auto"
+  NGINX_WORKER_CONNECTIONS: "1024"
