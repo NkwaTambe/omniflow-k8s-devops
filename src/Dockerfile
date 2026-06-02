@@ -15,7 +15,8 @@ RUN npm run build
 FROM nginx:1.28.0-alpine3.21 AS production
 
 # Security: Update Alpine packages to fix vulnerabilities
-RUN apk upgrade --no-cache && \
+RUN apk update && \
+    apk upgrade --no-cache && \
     apk add --no-cache tzdata && \
     rm -rf /var/cache/apk/*
 
