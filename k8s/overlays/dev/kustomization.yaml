@@ -1,0 +1,64 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: omniflow-dev
+
+resources:
+  - ../../base
+
+patches:
+  - target:
+      kind: Deployment
+      name: omniflow-frontend
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: ghcr.io/nkwatambe/omniflow-k8s-devops:dev
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: 25m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 32Mi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: 100m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 64Mi
+
+  - target:
+      kind: ConfigMap
+      name: omniflow-frontend-config
+    patch: |
+      - op: replace
+        path: /data/NODE_ENV
+        value: development
+
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: omniflow-frontend
+    patch: |
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 3
+
+  - target:
+      kind: Ingress
+      name: omniflow-frontend
+    patch: |
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: omniflow.dev.local
+      - op: replace
+        path: /spec/rules/0/host
+        value: omniflow.dev.local
+      - op: replace
+        path: /spec/tls/0/secretName
+        value: omniflow-dev-tls

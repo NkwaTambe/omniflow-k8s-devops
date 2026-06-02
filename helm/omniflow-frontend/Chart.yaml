@@ -1,0 +1,15 @@
+apiVersion: v2
+name: omniflow-frontend
+description: Helm chart for OmniFlow Frontend application deployed to Kubernetes
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+maintainers:
+  - name: NkwaTambe
+keywords:
+  - omniflow
+  - frontend
+  - react
+  - vite
+  - kubernetes
+home: https://github.com/NkwaTambe/omniflow-k8s-devops

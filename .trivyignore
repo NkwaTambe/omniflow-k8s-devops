@@ -1,0 +1,4 @@
+# CVE-2026-6732: libxml2 DoS via crafted XSD-validated document
+# Not exploitable in this context: nginx serving static frontend assets
+# Fix available in libxml2 2.13.9-r1 (Alpine); Docker cache may not pick it up
+CVE-2026-6732

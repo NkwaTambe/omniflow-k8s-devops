@@ -15,7 +15,8 @@ RUN npm run build
 FROM nginx:1.28.0-alpine3.21 AS production
 
 # Security: Update Alpine packages to fix vulnerabilities
-RUN apk upgrade --no-cache && \
+RUN apk update && \
+    apk upgrade --no-cache && \
     apk add --no-cache tzdata && \
     rm -rf /var/cache/apk/*
 
@@ -34,8 +35,8 @@ USER appuser
 
 # Add healthcheck
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:80/health || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
 
-EXPOSE 80
+EXPOSE 8080
 
 CMD ["nginx", "-g", "daemon off;"]
