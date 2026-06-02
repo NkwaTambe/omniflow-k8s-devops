@@ -78,11 +78,458 @@ kind creates cluster ──▶ Terraform provisions resources on cluster
 | Just Kustomize | No state tracking, no packaging into releases, no drift detection |
 
 **Together they solve each other's gaps:**
-- Terraform provides **drift detection** and **idempotency** (Helm and raw K8s lack this)
-- Helm provides **packaging** and **versioning** (Terraform can call Helm releases)
-- Kustomize provides **environment overlays** without duplicating manifests
-- K8s provides the **runtime** — everything ultimately becomes K8s resources
-- kind provides the **cluster** — no AWS account needed for local dev
+- Terraform provides **drift detection** and **idempotency** (Helm and raw K8s lack this). See [State Tracking](#state-tracking) and [Idempotency](#idempotency) in Key Concepts.
+- Helm provides **packaging** and **versioning** (Terraform can call Helm releases). A Helm chart is a reusable, versioned package — `helm install my-app ./chart` is simpler than writing 40+ lines of HCL.
+- Kustomize provides **environment overlays** without duplicating manifests. One base + three small patches = three environments, no copy-paste.
+- K8s provides the **runtime** — everything ultimately becomes K8s resources regardless of which tool created them.
+- kind provides the **cluster** — no AWS account needed for local dev.
+
+---
+
+## Key Concepts Explained
+
+If you're presenting this system, these are the terms you must be able to explain. Every term below appears elsewhere in this document — this section gives you the foundational understanding first.
+
+### Replica
+
+A **replica** is one running copy of your application pod. If you set `replicas = 3`, Kubernetes runs 3 identical pods behind the same Service. Traffic is load-balanced across all of them.
+
+```
+replicas = 1  →  1 pod   →  single point of failure (if it dies, app is down)
+replicas = 2  →  2 pods  →  can survive 1 failure
+replicas = 3  →  3 pods  →  can survive 1 failure + still do zero-downtime rolling updates
+```
+
+With HPA enabled, the replica count is **automatically adjusted** between `min_replicas` and `max_replicas` based on CPU/memory usage. You don't manually change replicas — the HPA does it for you.
+
+### TLS (Transport Layer Security)
+
+**TLS** encrypts data between the browser and the server. Without TLS, all traffic is plaintext — anyone on the network can read passwords, cookies, and page content.
+
+```
+Without TLS:  Browser ──HTTP (plaintext)──▶ Server   → anyone can eavesdrop
+With TLS:     Browser ──HTTPS (encrypted)──▶ Server  → data is encrypted, can't be read
+```
+
+**How TLS works in this system:**
+1. A **TLS certificate** is stored in a Kubernetes Secret (e.g., `omniflow-prod-tls`)
+2. The Ingress controller terminates TLS — it decrypts incoming HTTPS traffic, then forwards plain HTTP to the Service inside the cluster
+3. In prod, **cert-manager** + **Let's Encrypt** automatically provisions and renews certificates (no manual work)
+4. In dev, TLS is off because there's no real domain and no cert-manager
+
+**Why dev doesn't use TLS:** `omniflow.dev.local` is not a real domain. Let's Encrypt can't issue certificates for `.local` domains. And there's no security concern in local dev — only you can access it.
+
+### ClusterIP, NodePort, LoadBalancer — Service Types
+
+Kubernetes Services have three types that control how traffic reaches your app:
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                     Service Types Compared                        │
+├──────────────┬──────────────────┬────────────────────────────────┤
+│ ClusterIP    │ NodePort         │ LoadBalancer                   │
+├──────────────┼──────────────────┼────────────────────────────────┤
+│ Internal only│ Exposed on node  │ Cloud load balancer created    │
+│ Reachable    │ Reachable from   │ Reachable from internet via    │
+│ only inside  │ outside cluster  │ external IP (cloud provider    │
+│ the cluster  │ on port 30000-   │ provisions it automatically)   │
+│              │ 32767            │                                │
+├──────────────┼──────────────────┼────────────────────────────────┤
+│ Free         │ Free             │ Costs money (AWS ELB ~$18/mo)  │
+│ Default      │ For debugging    │ For production                 │
+│ Used here    │ Not used here    │ Not used here (we use Ingress) │
+└──────────────┴──────────────────┴────────────────────────────────┘
+```
+
+**Why we use ClusterIP + Ingress instead of LoadBalancer:**
+- ClusterIP is free and works inside the cluster
+- Ingress sits in front of ClusterIP services and routes external traffic to them
+- One Ingress can route to many Services (e.g., `/` → frontend, `/api` → backend)
+- LoadBalancer creates one cloud LB per Service (expensive, no path-based routing)
+
+**Real-world analogy:**
+- **ClusterIP** = internal phone extension (only reachable from inside the office)
+- **NodePort** = a direct outside line on a specific port (anyone can call, but port number is random)
+- **LoadBalancer** = a receptionist with a public phone number who forwards calls (costs money, cloud sets it up)
+- **Ingress** = a smart receptionist who routes by name (one phone number, many departments)
+
+### imagePullPolicy
+
+`imagePullPolicy` tells Kubernetes **when to download the container image**:
+
+| Policy | When it pulls | Use case |
+|--------|--------------|----------|
+| `Always` | Every time a pod starts | Production — ensures you get the latest `:latest` or `:dev` tag from the registry |
+| `IfNotPresent` | Only if the image isn't already on the node | Default. Good for tagged versions that don't change |
+| `Never` | Never pulls. Uses only what's already on the node | Local dev with kind — image is loaded via `kind load`, not from a registry |
+
+**How it's used across environments:**
+
+| Environment | imagePullPolicy | Why |
+|-------------|----------------|-----|
+| **Dev (kind)** | `Never` | Image is loaded locally via `kind load docker-image`. No registry access. If K8s tries to pull, it fails → `ImagePullBackOff`. |
+| **Staging (CI/CD)** | `Always` (Helm default) | Image is in ghcr.io. `Always` ensures the latest build is pulled. |
+| **Prod (CI/CD)** | `Always` (Helm default) | Same reason — always get the freshly pushed image. |
+
+**Why we patch it in dev:** Terraform/Helm configs default to `Always`. In kind, there's no registry — the image is loaded directly into the node. Setting `Never` tells K8s "use what's already there."
+
+### Pod
+
+A **pod** is the smallest deployable unit in Kubernetes. It contains one or more containers that share the same network (same IP address) and storage volumes.
+
+```
+Pod = 1+ containers sharing:
+  - Same IP address (can talk to each other via localhost)
+  - Same storage volumes
+  - Same lifecycle (created together, destroyed together)
+
+Our pod: 1 container (nginx serving the React app on port 8080)
+```
+
+In this project, each pod runs a single nginx container serving the built React frontend.
+
+### Namespace
+
+A **namespace** is a logical partition inside a Kubernetes cluster. It groups resources and prevents name collisions.
+
+```
+Without namespaces:  deployment/my-app, deployment/my-app  → CONFLICT
+With namespaces:     dev/deployment/my-app, prod/deployment/my-app  → NO CONFLICT
+```
+
+Our namespaces: `omniflow-dev`, `omniflow-staging`, `omniflow-prod`. Each is an isolated environment within the same cluster.
+
+### Deployment
+
+A **Deployment** is a Kubernetes resource that manages pods. You tell it "I want 3 replicas of this container image" and it:
+- Creates and maintains 3 pods
+- Restarts pods if they fail (self-healing)
+- Performs rolling updates when you change the image (zero-downtime)
+- Keeps track of rollout history for rollback
+
+```
+You declare: "I want 3 pods running image X"
+Deployment:  creates 3 pods, monitors them, replaces failed ones
+             if you update image → rolling update (new pod starts, old pod terminates)
+```
+
+### ConfigMap and Secret
+
+Both store configuration data, but with different security levels:
+
+| | ConfigMap | Secret |
+|---|---|---|
+| **Stores** | Non-sensitive data (NODE_ENV, titles) | Sensitive data (API keys, passwords, TLS certs) |
+| **Storage** | Plaintext in etcd | Base64-encoded in etcd (can enable encryption at rest) |
+| **Access** | Readable by anyone with kubectl access | Same access model, but encoded (not encrypted by default) |
+| **Our use** | NODE_ENV, VITE_APP_TITLE, nginx worker settings | TLS certificates, future API keys |
+
+### Ingress
+
+An **Ingress** is a Kubernetes resource that routes external HTTP/HTTPS traffic to Services based on rules. Think of it as a reverse proxy or URL router.
+
+```
+Internet traffic arrives at Ingress Controller (nginx)
+  → Ingress rule: "if host = omniflow.example.com, route to Service omniflow-frontend:80"
+  → Service routes to Pod:8080
+```
+
+Without Ingress, you'd need a LoadBalancer per Service (expensive, no path-based routing). With Ingress, one entry point routes to many Services.
+
+### HPA (Horizontal Pod Autoscaler)
+
+The **HPA** automatically adds or removes pods based on CPU/memory usage. "Horizontal" = scaling out (more pods), not up (bigger pod).
+
+```
+CPU at 50%  →  HPA does nothing (below 70% target)
+CPU at 80%  →  HPA adds pods to bring CPU back down to ~70%
+CPU at 30%  →  HPA removes pods (after 5 min cooldown) to save resources
+```
+
+### NetworkPolicy
+
+A **NetworkPolicy** is a Kubernetes firewall. By default, all pods can talk to all pods. NetworkPolicy restricts this to only allowed traffic.
+
+```
+Without NetworkPolicy:  Any pod → Any pod (fully open)
+With NetworkPolicy:     Only explicitly allowed traffic flows
+                         Frontend can receive from Ingress Controller + OmniFlow namespaces
+                         Frontend can send to DNS only (port 53)
+                         Everything else is blocked
+```
+
+### ServiceAccount
+
+A **ServiceAccount** is an identity for pods. Just like a user account, but for processes running inside the cluster. It determines what the pod can do (permissions).
+
+By default, pods get a service account token that lets them talk to the Kubernetes API. We disable this (`automount_service_account_token = false`) because our frontend has no reason to call the K8s API — it's just nginx serving static files.
+
+### kubeconfig (`~/.kube/config`)
+
+**kubeconfig** is a configuration file that tells `kubectl` which cluster to talk to and how to authenticate. It's stored at `~/.kube/config`.
+
+```yaml
+# Simplified kubeconfig structure
+clusters:
+  - cluster:
+      server: https://127.0.0.1:39543   # API server address
+      certificate-authority-data: ...    # CA cert to verify the server
+    name: kind-omniflow                  # Cluster name
+
+users:
+  - user:
+      token: ...                         # Authentication token
+    name: kind-omniflow                  # User name
+
+contexts:
+  - context:
+      cluster: kind-omniflow             # Which cluster
+      user: kind-omniflow                # Which user credentials
+    name: kind-omniflow                  # Context name (you use this)
+```
+
+When you run `kubectl get pods`, kubectl:
+1. Reads `~/.kube/config`
+2. Finds the current context (e.g., `kind-omniflow`)
+3. Connects to that cluster's API server using that context's credentials
+4. Sends your request
+
+When `kind create cluster` runs, it **automatically updates** your kubeconfig to add the new cluster and set it as the current context. When you switch between clusters (e.g., kind vs AWS EKS), you switch contexts: `kubectl config use-context kind-omniflow`.
+
+### Control Plane vs Worker Node
+
+A Kubernetes cluster has two types of machines:
+
+**Control Plane** (the brain):
+```
+┌──────────────────────────────────────────┐
+│           Control Plane                   │
+│                                          │
+│  API Server    → Receives kubectl/Helm   │
+│                   requests. The "front   │
+│                   door" to the cluster.   │
+│                                          │
+│  etcd          → Database storing ALL    │
+│                   cluster state (pods,    │
+│                   services, secrets, etc) │
+│                                          │
+│  Scheduler     → Decides WHICH node each │
+│                   pod runs on based on   │
+│                   resources, constraints │
+│                                          │
+│  Controller    → Reconciliation loops:   │
+│  Manager         "I see 3 pods requested │
+│                   but only 2 running →   │
+│                   create 1 more"         │
+└──────────────────────────────────────────┘
+```
+
+**Worker Node** (the muscle):
+```
+┌──────────────────────────────────────────┐
+│           Worker Node                     │
+│                                          │
+│  kubelet       → Agent on each node.     │
+│                   Talks to API server,   │
+│                   starts/stops containers│
+│                   reports pod status      │
+│                                          │
+│  kube-proxy    → Network rules. Routes   │
+│                   traffic to the right    │
+│                   pod (implements Service │
+│                   load balancing)         │
+│                                          │
+│  Container     → Docker/containerd.      │
+│  Runtime         Actually runs the       │
+│                   containers             │
+└──────────────────────────────────────────┘
+```
+
+**Example — what happens when you run `kubectl apply -f deployment.yaml`:**
+
+1. `kubectl` sends the Deployment YAML to the **API Server** on the control plane
+2. API Server validates the YAML and stores it in **etcd**
+3. **Controller Manager** notices: "new Deployment with 3 replicas requested"
+4. Controller Manager creates 3 Pod objects in etcd
+5. **Scheduler** notices: "3 new Pods with no node assigned"
+6. Scheduler evaluates: CPU requests, topology spread, node capacity → assigns each pod to a worker node
+7. **kubelet** on the worker node notices: "I have a new pod assigned to me"
+8. kubelet pulls the container image and starts it via the **container runtime**
+9. kubelet reports back to API Server: "pod is Running"
+10. **kube-proxy** sets up networking rules so the Service can route traffic to this pod
+
+In kind, both control plane and worker are Docker containers on your laptop. In production, they'd be separate VMs or physical machines.
+
+### State Tracking
+
+**State tracking** means a tool remembers what it created and compares the current reality against that record.
+
+| Tool | Has state tracking? | How |
+|------|---------------------|-----|
+| **Terraform** | Yes | `.tfstate` file records every resource it created, its IDs, and its current config |
+| **Helm** | Partial | Helm release secrets in K8s store the last-rendered values, but no drift detection |
+| **kubectl apply** | No | Fire-and-forget. No record of what was applied or what changed since |
+| **Kustomize** | No | Pure rendering engine. Generates YAML but doesn't track what's deployed |
+
+**Why state tracking matters:** Without it, you can't answer "has anything changed since I last deployed?" Terraform can answer this because it has a state file to compare against.
+
+### Idempotency
+
+**Idempotency** means running the same operation multiple times produces the same result. Running `terraform apply` 1 time or 100 times gives you the same infrastructure.
+
+**How Terraform achieves idempotency:**
+
+```
+Step 1: Read declared state    → Your .tf files say "1 replica, image :dev"
+Step 2: Read current state     → .tfstate file says "1 replica, image :dev"
+Step 3: Read actual state      → K8s API says "1 replica, image :dev"
+Step 4: Compare                → All three match → "No changes. Your infrastructure matches the configuration."
+Step 5: Apply only the diff    → If actual ≠ declared, apply ONLY the changes needed
+```
+
+**Without idempotency (raw kubectl):**
+```bash
+kubectl apply -f deployment.yaml   # Creates deployment
+kubectl apply -f deployment.yaml   # No-op (already exists, no change detected)
+kubectl apply -f deployment.yaml   # No-op again
+```
+
+This *seems* idempotent, but only because kubectl does a strategic merge. If someone `kubectl edit`'d the deployment between your applies, the second `apply` silently overwrites their changes without telling you.
+
+**With Terraform:**
+```bash
+terraform apply   # Creates deployment (1 replica)
+# Someone runs: kubectl scale deployment --replicas=5
+terraform plan    # Shows: replicas: "5" → "1" (DRIFT DETECTED)
+terraform apply   # Restores to 1 replica (only the diff is applied)
+terraform apply   # No changes (idempotent — state matches)
+```
+
+Terraform's idempotency comes from its **three-way comparison**: declared state (code) vs recorded state (.tfstate) vs actual state (K8s API). It only applies the minimum changes needed to bring reality back to what the code declares.
+
+### "HCL Is Verbose for K8s Resources" — What This Means
+
+HCL (HashiCorp Configuration Language) is Terraform's language. Compared to YAML, it takes more lines to define the same K8s resource:
+
+**YAML (Helm/K8s manifest) — Deployment in 15 lines:**
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: omniflow-frontend
+spec:
+  replicas: 3
+  template:
+    spec:
+      containers:
+        - name: omniflow-frontend
+          image: ghcr.io/nkwatambe/omniflow-k8s-devops:latest
+          ports:
+            - containerPort: 8080
+```
+
+**HCL (Terraform) — Same Deployment in 40+ lines:**
+```hcl
+resource "kubernetes_deployment" "frontend" {
+  metadata {
+    name      = var.app_name
+    namespace = var.namespace
+    labels    = local.labels
+  }
+  spec {
+    replicas = var.replicas
+    selector { match_labels = local.selector_labels }
+    template {
+      metadata { labels = local.labels }
+      spec {
+        container {
+          name  = var.app_name
+          image = "${var.image_repository}:${var.image_tag}"
+          port { container_port = 8080 }
+          # ... plus security_context, probes, resources, volumes...
+        }
+      }
+    }
+  }
+}
+```
+
+HCL is verbose because it uses nested blocks instead of YAML's indentation. But this verbosity gives you:
+- **Variables** (`var.replicas`) — YAML can't do this without Helm templating
+- **Conditionals** (`count = var.hpa_enabled ? 1 : 0`) — can't conditionally create resources in plain YAML
+- **Type checking** — Terraform validates types at plan time
+
+The trade-off: HCL is more lines, but each line is explicit and type-safe. YAML is concise but needs Helm's `{{ }}` templating to achieve the same flexibility, which is harder to debug.
+
+### Docker Build Command Explained
+
+```bash
+docker build -t ghcr.io/nkwatambe/omniflow-k8s-devops:local ./src
+```
+
+Breaking it down:
+
+| Part | Meaning |
+|------|---------|
+| `docker build` | Build a container image from a Dockerfile |
+| `-t` | **Tag** — gives the image a name and tag |
+| `ghcr.io/nkwatambe/omniflow-k8s-devops` | **Image name** — the full registry path. `ghcr.io` = GitHub Container Registry (where CI/CD pushes images). `nkwatambe` = GitHub org. `omniflow-k8s-devops` = repository name. This could be anything, but matching the CI/CD registry path means the same image name works locally and in CI/CD. |
+| `:local` | **Tag** — a label for this specific version of the image. Common tags: `:latest`, `:dev`, `:v1.2.3`, `:sha-abc1234`. We use `:local` to mean "built on my laptop, not from a registry." |
+| `./src` | **Build context** — the directory containing the Dockerfile. Docker looks for `./src/Dockerfile` and can only COPY files from this directory. |
+
+**The full image reference format:**
+```
+registry/org/repo:tag
+   │       │    │    │
+   │       │    │    └─ Version label (local, dev, latest, sha-abc1234)
+   │       │    └────── Repository name
+   │       └─────────── Organization/owner
+   └─────────────────── Container registry (ghcr.io, docker.io, ecr.aws)
+```
+
+**Why the name matters:** In CI/CD, the same image name is used but with different tags:
+- Local: `ghcr.io/nkwatambe/omniflow-k8s-devops:local`
+- CI build: `ghcr.io/nkwatambe/omniflow-k8s-devops:sha-cda36ba`
+- Staging: `ghcr.io/nkwatambe/omniflow-k8s-devops:staging`
+- Prod: `ghcr.io/nkwatambe/omniflow-k8s-devops:latest`
+
+### kind-config.yaml — Why It Exists and What Happens Without It
+
+```yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+  - role: worker
+```
+
+**Why we need it:** By default, `kind create cluster` creates a **single-node** cluster (control-plane only, no separate worker). This works for basic testing but:
+- There's no node separation — pods run on the control plane (not realistic)
+- Topology spread constraints can't work (only 1 node)
+- You can't test pod scheduling across nodes
+
+**With kind-config.yaml (2 nodes):**
+```
+┌─────────────────┐    ┌─────────────────┐
+│ control-plane    │    │ worker           │
+│ (API server,     │    │ (runs your app  │
+│  etcd, scheduler)│    │  pods here)     │
+└─────────────────┘    └─────────────────┘
+```
+
+**Without kind-config.yaml (1 node):**
+```
+┌─────────────────────────┐
+│ control-plane (everything│
+│ runs here: system + app) │
+└─────────────────────────┘
+```
+
+**What happens if you don't use it:**
+- `kind create cluster --name omniflow` works fine — it creates a single-node cluster
+- The deployment still works — pods run on the control plane
+- Topology spread constraints would fail (can't spread across 1 node) — pods would stay `Pending`
+- For dev, a single node is usually fine. The config file is there to make the local cluster closer to production (which has separate control plane + workers)
 
 ---
 
@@ -148,9 +595,19 @@ nodes:
   - role: worker
 ```
 
+> **Why this config file?** See [kind-config.yaml — Why It Exists](#kind-configyaml--why-it-exists-and-what-happens-without-it) in Key Concepts. Without it, kind creates a single-node cluster where topology spread constraints can't work.
+
 ```bash
 kind create cluster --name omniflow --config kind-config.yaml --wait 120s
 ```
+
+What the flags mean:
+
+| Flag | Meaning |
+|------|---------|
+| `--name omniflow` | Names the cluster `omniflow` (used in `kind-omniflow` context name) |
+| `--config kind-config.yaml` | Uses our 2-node config instead of default single-node |
+| `--wait 120s` | Waits up to 120s for the control plane to be ready before returning |
 
 Verify:
 
@@ -162,8 +619,8 @@ kubectl get nodes
 ```
 
 **What just happened?**
-- kind created 2 Docker containers: 1 control-plane (API server, etcd, scheduler) + 1 worker (kubelet, kube-proxy)
-- Your `~/.kube/config` was updated with the cluster context `kind-omniflow`
+- kind created 2 Docker containers: 1 control-plane (API server, etcd, scheduler) + 1 worker (kubelet, kube-proxy). See [Control Plane vs Worker Node](#control-plane-vs-worker-node) in Key Concepts.
+- Your `~/.kube/config` was updated with the cluster context `kind-omniflow`. See [kubeconfig](#kubeconfig-kubekubeconfig) in Key Concepts.
 - You now have a fully functional K8s cluster — same API as AWS EKS, just running locally
 
 > **Note:** Port 80/443 host mappings are omitted because they may conflict with local services. Use `kubectl port-forward` instead.
@@ -180,12 +637,14 @@ docker build -t ghcr.io/nkwatambe/omniflow-k8s-devops:local ./src
 kind load docker-image ghcr.io/nkwatambe/omniflow-k8s-devops:local --name omniflow
 ```
 
+> **Command breakdown:** See [Docker Build Command Explained](#docker-build-command-explained) in Key Concepts for what `-t`, `ghcr.io/...`, `:local`, and `./src` mean.
+
 **What just happened?**
 - Docker built the multi-stage image (Node.js build stage → nginx production stage)
 - `kind load` copied the image into both the control-plane and worker Docker containers
 - The image is now available inside the cluster without pulling from a registry
 
-> **Why `:local` tag?** The Helm/Terraform configs reference `:dev` or `:latest` tags. For local dev, we use `:local` and patch the deployment to use `imagePullPolicy: Never`. In CI/CD, the image is pushed to ghcr.io with `:sha-abc1234`, so the tag matches the registry.
+> **Why `:local` tag?** The Helm/Terraform configs reference `:dev` or `:latest` tags. For local dev, we use `:local` and patch the deployment to use `imagePullPolicy: Never`. In CI/CD, the image is pushed to ghcr.io with `:sha-abc1234`, so the tag matches the registry. See [imagePullPolicy](#imagepullpolicy) in Key Concepts.
 
 ---
 
@@ -469,6 +928,8 @@ resource "kubernetes_service_account" "frontend" {
 
 #### Replicas
 
+> **What is a replica?** See [Replica](#replica) in Key Concepts.
+
 ```hcl
 replicas = var.replicas  # dev: 1, staging: 2, prod: 3
 ```
@@ -647,7 +1108,7 @@ resource "kubernetes_service" "frontend" {
 3. Traffic to `ServiceIP:80` is load-balanced across all ready pod IPs on port 8080
 4. When a pod's readiness probe fails, the Service removes it from the endpoint list (no traffic sent)
 
-**Why `ClusterIP` and not `LoadBalancer`:**
+**Why `ClusterIP` and not `LoadBalancer`:** See [ClusterIP, NodePort, LoadBalancer — Service Types](#clusterip-nodeport-loadBalancer--service-types) in Key Concepts for the full comparison.
 - `ClusterIP`: Internal only. Ingress forwards external traffic to this Service. This is the standard pattern.
 - `NodePort`: Exposes on a high port on every node. Bypasses Ingress. Useful for debugging.
 - `LoadBalancer`: Creates a cloud load balancer (AWS ELB, GCP LB). Costs money. Only works in cloud clusters.
@@ -800,6 +1261,8 @@ Browser → DNS resolves omniflow.example.com → Ingress Controller (nginx)
 | `cert-manager.io/cluster-issuer` | `"letsencrypt-prod"` | Auto-provisions TLS certs via Let's Encrypt (prod only) |
 
 **TLS across environments:**
+
+> **What is TLS?** See [TLS (Transport Layer Security)](#tls-transport-layer-security) in Key Concepts.
 
 | Environment | TLS | Why |
 |-------------|-----|-----|
