@@ -1,0 +1,29 @@
+# values for kube-prometheus-stack
+# Enable Grafana and expose via NodePort for local access
+grafana:
+  enabled: true
+  adminUser: admin
+  adminPassword: "admin"
+  service:
+    type: NodePort
+    nodePort: 30030
+    port: 80
+    targetPort: 3000
+prometheus:
+  enabled: true
+  service:
+    type: NodePort
+    nodePort: 30031
+    port: 9090
+    targetPort: 9090
+# Alertmanager optional
+alertmanager:
+  enabled: true
+  service:
+    type: NodePort
+    nodePort: 30032
+    port: 9093
+    targetPort: 9093
+# Disable default PrometheusOperator CRDs to avoid reinstallation if already present
+prometheusOperator:
+  enabled: false
