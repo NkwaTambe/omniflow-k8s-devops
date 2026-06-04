@@ -1,0 +1,122 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: omniflow-alerts
+  namespace: monitoring
+  labels:
+    release: monitoring
+    app: kube-prometheus-stack
+spec:
+  groups:
+    # ──────────────────────────────────────────────
+    # Group 1: Pod Health Alerts
+    # ──────────────────────────────────────────────
+    - name: omniflow.pod.health
+      rules:
+        - alert: OmniFlowPodDown
+          expr: |
+            kube_deployment_status_replicas_available{
+              namespace="default",
+              deployment="omniflow-frontend"
+            } == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "OmniFlow Frontend is DOWN"
+            description: "No running replicas of omniflow-frontend for more than 1 minute."
+
+        - alert: OmniFlowPodCrashLooping
+          expr: |
+            rate(kube_pod_container_status_restarts_total{
+              namespace="default",
+              container="omniflow-frontend"
+            }[5m]) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "OmniFlow Frontend is crash-looping"
+            description: "Container has restarted multiple times in the last 5 minutes."
+
+    # ──────────────────────────────────────────────
+    # Group 2: Resource Usage Alerts
+    # ──────────────────────────────────────────────
+    - name: omniflow.resources
+      rules:
+        - alert: OmniFlowHighCPU
+          expr: |
+            (
+              sum(rate(container_cpu_usage_seconds_total{
+                namespace="default",
+                container="omniflow-frontend"
+              }[5m]))
+              /
+              sum(kube_pod_container_resource_limits{
+                namespace="default",
+                container="omniflow-frontend",
+                resource="cpu"
+              })
+            ) * 100 > 80
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "OmniFlow CPU usage above 80%"
+            description: "CPU usage has been above 80% of its limit for 5 minutes."
+
+        - alert: OmniFlowHighMemory
+          expr: |
+            (
+              sum(container_memory_working_set_bytes{
+                namespace="default",
+                container="omniflow-frontend"
+              })
+              /
+              sum(kube_pod_container_resource_limits{
+                namespace="default",
+                container="omniflow-frontend",
+                resource="memory"
+              })
+            ) * 100 > 85
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "OmniFlow Memory usage above 85%"
+            description: "Memory usage has been above 85% of its limit for 5 minutes."
+
+    # ──────────────────────────────────────────────
+    # Group 3: Cluster-Wide Health
+    # ──────────────────────────────────────────────
+    - name: omniflow.cluster
+      rules:
+        - alert: HighNodeCPU
+          expr: |
+            (1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m]))) * 100 > 90
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Cluster node CPU above 90%"
+            description: "Average CPU across nodes has been above 90% for 10 minutes."
+
+        - alert: HighNodeMemory
+          expr: |
+            (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Cluster node memory above 90%"
+            description: "Node memory utilization has been above 90% for 10 minutes."
+
+        - alert: HighDiskUsage
+          expr: |
+            (1 - (node_filesystem_avail_bytes{fstype=~"ext4|xfs"} / node_filesystem_size_bytes{fstype=~"ext4|xfs"})) * 100 > 85
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Disk usage above 85%"
+            description: "A node filesystem is more than 85% full."
