@@ -11,7 +11,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:unit": "vitest run src/src/App.test.tsx src/tests/unit",
+    "test:integration": "vitest run tests/integration.test.tsx"
   },
   "dependencies": {
     "react": "^19.2.6",
