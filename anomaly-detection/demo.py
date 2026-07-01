@@ -16,13 +16,12 @@ We use the HDFS dataset (included in this repo) because it's a real,
 well-studied dataset with known anomalies — perfect for learning.
 """
 
-import sys
 import os
+import sys
 import urllib.request
-import zipfile
 
-# Add loglizer to Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'loglizer'))
+# Add this directory to path so we can import the local loglizer package
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import numpy as np
 import pandas as pd
@@ -52,8 +51,8 @@ def download_hdfs_data(data_dir):
     os.makedirs(data_dir, exist_ok=True)
     print(f"Downloading HDFS dataset to {data_dir}...")
 
-    # Download from logpai/loghub (the official source for this data)
-    base_url = "https://raw.githubusercontent.com/logpai/loghub/master/HDFS"
+    # Download from logpai/loglizer (the official source for this data)
+    base_url = "https://raw.githubusercontent.com/logpai/loglizer/master/data/HDFS"
     files = {
         'HDFS_100k.log_structured.csv': structured_log,
         'anomaly_label.csv': label_file,
@@ -81,7 +80,7 @@ def main():
 
     # ─── Configuration ────────────────────────────────────────────
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    data_dir = os.path.join(script_dir, '..', 'loglizer', 'data', 'HDFS')
+    data_dir = os.path.join(script_dir, 'data', 'HDFS')
 
     # Download data if needed
     structured_log, label_file = download_hdfs_data(data_dir)

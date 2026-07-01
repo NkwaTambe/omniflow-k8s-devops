@@ -89,6 +89,7 @@ build/
 venv/
 
 # Anomaly detection - downloaded/generated data
+anomaly-detection/data/
 anomaly-detection/results/
 
 # Loglizer data (large CSVs, downloaded at runtime)
