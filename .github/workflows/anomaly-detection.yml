@@ -1,0 +1,44 @@
+name: Log Anomaly Detection
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'anomaly-detection/**'
+      - 'loglizer/**'
+      - '.github/workflows/anomaly-detection.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'anomaly-detection/**'
+      - 'loglizer/**'
+      - '.github/workflows/anomaly-detection.yml'
+  # Allow manual trigger
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  anomaly-detection:
+    name: Log Anomaly Detection Demo
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: anomaly-detection/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r anomaly-detection/requirements.txt
+
+      - name: Run anomaly detection demo
+        run: python anomaly-detection/demo.py

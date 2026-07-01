@@ -75,3 +75,23 @@ logs/
 *.pem
 *.key
 secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+
+# Anomaly detection - downloaded/generated data
+anomaly-detection/data/
+anomaly-detection/results/
+
+# Loglizer data (large CSVs, downloaded at runtime)
+loglizer/data/
+loglizer/__pycache__/
